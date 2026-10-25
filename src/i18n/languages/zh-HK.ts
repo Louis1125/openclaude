@@ -16,11 +16,11 @@ export default {
 
   "commands.provider.description": "開啟服務商設定選單與切換設定檔",
   "commands.model.description": "切換當前對話的 AI 模型",
-  "commands.onboard-github.description": "設定 GitHub Models 認證資訊",
+  "commands.onboard-github.description": "設定 GitHub Copilot 認證資訊",
   "commands.buddy.description": "喚醒或設定 Terminal Pixel Buddy",
   "commands.repomap.description": "檢視專案結構地圖與權重排名",
   "commands.btw.description": "傳送旁白提問而不中斷主對話 Context",
-  "commands.usage.description": "顯示 API 用量與 Token 消耗",
+  "commands.usage.description": "顯示計劃用量上限",
   "commands.help.description": "顯示 OpenClaude 指令與快捷鍵指南",
 
   "provider.title": "設定服務商設定檔",

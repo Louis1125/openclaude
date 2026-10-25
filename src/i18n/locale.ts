@@ -23,7 +23,8 @@ function localeFromEnv(): Locale | undefined {
 
   if (!raw) return undefined
 
-  const [langRegion] = raw.split('.')
+  // POSIX locales can carry a codeset and/or a modifier after the region.
+  const [langRegion] = raw.split(/[.@]/)
   const [lang, region] = langRegion.split(/[-_]/)
 
   if (lang === 'zh' && region === 'hk') return 'zh-HK'

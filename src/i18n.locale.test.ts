@@ -1,42 +1,25 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 
+import { formatDescriptionWithSource } from './commands.js'
+import onboardGithub from './commands/onboard-github/index.js'
+import usage from './commands/usage/index.js'
+import { getOpenClaudeCommandDescriptionKey } from './i18n/index.js'
 import { detectLocale } from './i18n/locale.js'
+import { snapshotEnv } from './test/envSnapshot.js'
 import {
   resetSettingsCache,
   setSessionSettingsCache,
 } from './utils/settings/settingsCache.js'
 
-const ORIGINAL_ENV: Record<string, string | undefined> = {}
+let restoreEnv: () => void
 
-/**
- * Snapshot the three POSIX locale variables before each test so they can be
- * restored afterwards, avoiding cross-test state leakage.
- */
 beforeEach(() => {
-  ORIGINAL_ENV.LC_ALL = process.env.LC_ALL
-  ORIGINAL_ENV.LC_MESSAGES = process.env.LC_MESSAGES
-  ORIGINAL_ENV.LANG = process.env.LANG
-
-  // Clear after snapshotting so every test starts from a known-clean
-  // environment, regardless of what the CI/host machine's locale is set
-  // to. Without this, settings-based fallback tests (e.g. zh_CN, en_HK)
-  // can flakily pass or fail depending on the runner's real LC_ALL/LANG.
-  delete process.env.LC_ALL
-  delete process.env.LC_MESSAGES
-  delete process.env.LANG
+  restoreEnv = snapshotEnv(['LC_ALL', 'LC_MESSAGES', 'LANG'], { clear: true })
 })
 
 afterEach(() => {
   resetSettingsCache()
-
-  // Restore individual variables instead of reassigning the whole object.
-  for (const key of ['LC_ALL', 'LC_MESSAGES', 'LANG'] as const) {
-    if (ORIGINAL_ENV[key] === undefined) {
-      delete process.env[key]
-    } else {
-      process.env[key] = ORIGINAL_ENV[key]
-    }
-  }
+  restoreEnv()
 })
 
 // ---------------------------------------------------------------------------
@@ -138,6 +121,40 @@ describe('detectLocale – environment variables', () => {
     expect(detectLocale()).toBe('en')
   })
 
+  test.each([
+    ['en_US.UTF-8', 'zh_HK.UTF-8', 'vi_VN.UTF-8', 'en'],
+    ['', 'zh_HK.UTF-8', 'vi_VN.UTF-8', 'zh-HK'],
+    ['', '', 'vi_VN.UTF-8', 'vi'],
+    ['C', 'zh_HK.UTF-8', 'vi_VN.UTF-8', 'en'],
+  ] as const)('prioritizes LC_ALL=%s, LC_MESSAGES=%s, LANG=%s → %s',
+    (lcAll, lcMessages, lang, expected) => {
+      clearAll()
+      process.env.LC_ALL = lcAll
+      process.env.LC_MESSAGES = lcMessages
+      process.env.LANG = lang
+      expect(detectLocale()).toBe(expected)
+    },
+  )
+
+  test('a supported settings language overrides all locale variables', () => {
+    setSessionSettingsCache({ settings: { language: 'en' }, errors: [] })
+    process.env.LC_ALL = 'zh_HK.UTF-8'
+    process.env.LC_MESSAGES = 'vi_VN.UTF-8'
+    process.env.LANG = 'zh_HK.UTF-8'
+    expect(detectLocale()).toBe('en')
+  })
+
+  test.each([
+    ['zh_HK@traditional', 'zh-HK'],
+    ['zh_HK.UTF-8@traditional', 'zh-HK'],
+    ['zh_CN@traditional', 'en'],
+    ['en_HK@traditional', 'en'],
+  ] as const)('LANG=%s → %s', (lang, expected) => {
+    clearAll()
+    process.env.LANG = lang
+    expect(detectLocale()).toBe(expected)
+  })
+
   test('falls back to en when no env vars are set', () => {
     clearAll()
     expect(detectLocale()).toBe('en')
@@ -145,23 +162,23 @@ describe('detectLocale – environment variables', () => {
 })
 
 // ---------------------------------------------------------------------------
-// /onboard-github key resolution
+// Command-description consumer resolution
 // ---------------------------------------------------------------------------
 
-describe('/onboard-github localization', () => {
-  test('resolves the zh-HK translation instead of falling back to English', async () => {
-    const { localize } = await import('./i18n/index.js')
-    setSessionSettingsCache({
-      settings: { language: 'zh-HK' },
-      errors: [],
-    })
+describe('zh-HK command descriptions', () => {
+  test.each([
+    [usage.name, usage, '顯示計劃用量上限'],
+    [onboardGithub.name, onboardGithub, '設定 GitHub Copilot 認證資訊'],
+  ] as const)('preserves the purpose of /%s', (_name, command, expected) => {
+    setSessionSettingsCache({ settings: { language: 'zh-HK' }, errors: [] })
+    const localizationKey = getOpenClaudeCommandDescriptionKey(command.name)
+    expect(localizationKey).toBeDefined()
 
-    const result = localize(
-      'commands.onboard-github.description',
-      'Set up GitHub Models authentication',
-    )
+    const localizedCommand = { ...command, localizationKey }
+    expect(formatDescriptionWithSource(localizedCommand)).toBe(expected)
 
-    expect(result).not.toBe('Set up GitHub Models authentication')
-    expect(result).toBe('設定 GitHub Models 認證資訊')
+    // The same real command must retain its canonical description in English.
+    setSessionSettingsCache({ settings: { language: 'en' }, errors: [] })
+    expect(formatDescriptionWithSource(localizedCommand)).toBe(command.description)
   })
 })
